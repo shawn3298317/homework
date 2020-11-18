@@ -1,4 +1,6 @@
-import pickle, tensorflow as tf, tf_util, numpy as np
+import pickle
+import tensorflow as tf
+import numpy as np
 
 def load_policy(filename):
     with open(filename, 'rb') as f:
@@ -14,8 +16,8 @@ def load_policy(filename):
     assert set(policy_params.keys()) == {'logstdevs_1_Da', 'hidden', 'obsnorm', 'out'}
 
     # Keep track of input and output dims (i.e. observation and action dims) for the user
-
-    def build_policy(obs_bo):
+    @tf.function
+    def policy_fn(obs_bo):
         def read_layer(l):
             assert list(l.keys()) == ['AffineLayer']
             assert sorted(l['AffineLayer'].keys()) == ['W', 'b']
@@ -23,7 +25,7 @@ def load_policy(filename):
 
         def apply_nonlin(x):
             if nonlin_type == 'lrelu':
-                return tf_util.lrelu(x, leak=.01) # openai/imitation nn.py:233
+                return tf.nn.leaky_relu(x, leak=.01) # openai/imitation nn.py:233
             elif nonlin_type == 'tanh':
                 return tf.tanh(x)
             else:
@@ -34,7 +36,7 @@ def load_policy(filename):
         obsnorm_mean = policy_params['obsnorm']['Standardizer']['mean_1_D']
         obsnorm_meansq = policy_params['obsnorm']['Standardizer']['meansq_1_D']
         obsnorm_stdev = np.sqrt(np.maximum(0, obsnorm_meansq - np.square(obsnorm_mean)))
-        print('obs', obsnorm_mean.shape, obsnorm_stdev.shape)
+        # print('obs', obsnorm_mean.shape, obsnorm_stdev.shape)
         normedobs_bo = (obs_bo - obsnorm_mean) / (obsnorm_stdev + 1e-6) # 1e-6 constant from Standardizer class in nn.py:409 in openai/imitation
 
         curr_activations_bd = normedobs_bo
@@ -52,7 +54,4 @@ def load_policy(filename):
         output_bo = tf.matmul(curr_activations_bd, W) + b
         return output_bo
 
-    obs_bo = tf.placeholder(tf.float32, [None, None])
-    a_ba = build_policy(obs_bo)
-    policy_fn = tf_util.function([obs_bo], a_ba)
     return policy_fn
